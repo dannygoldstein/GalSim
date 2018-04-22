@@ -366,7 +366,6 @@ namespace galsim {
             throw std::runtime_error("Attempting to PhotonArray::addTo an Image with"
                                      " undefined Bounds");
 
-        // Factor to turn flux into surface brightness in an Image pixel
 #ifdef DEBUGLOGGING
         dbg<<"In Silicon::accumulate\n";
         dbg<<"bounds = "<<b<<std::endl;

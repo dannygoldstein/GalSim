@@ -62,6 +62,8 @@ class Sensor(object):
         @param orig_center  The position of the image center in the original image coordinates.
                             [default: (0,0)]
         """
+        if not image.bounds.isDefined():
+            raise GalSimError("Calling accumulate on image with undefined bounds")
         return photons.addTo(image)
 
     def __repr__(self):
@@ -234,6 +236,8 @@ class SiliconSensor(Sensor):
         @param orig_center  The position of the image center in the original image coordinates.
                             [default: (0,0)]
         """
+        if not image.bounds.isDefined():
+            raise GalSimError("Calling accumulate on image with undefined bounds")
         return self._silicon.accumulate(photons._pa, self.rng._rng, image._image, orig_center._p)
 
     def _read_config_file(self, filename):
