@@ -49,14 +49,8 @@ API Changes
   profile (unless the inclination angle is 0 degrees). (#809f)
 - Removed galsim_yaml and galsim_json scripts, which were essentially just
   aliases for galsim -f yaml and galsim -f json respectively. (#809f)
-- Removed lsst module, which depended on the LSST stack and had gotten quite
-  out of sync and broken. (#964)
-
-
-Bug Fixes
----------
-
-
+- Removed the lsst module, which depended on the LSST stack and had gotten
+  quite out of sync and broken. (#964)
 
 
 Deprecated Features
@@ -68,6 +62,14 @@ Deprecated Features
 New Features
 ------------
 
-
-New config features
--------------------
+- Added a new class hierarchy for exceptions raised by GalSim with the base
+  class `GalSimError`, a subclass of `RuntimeError`.  This provides a hook for
+  adding sub-classes, which may provide more specific information about the
+  nature of an error.  So far, sub-classes include GalSimHSMError for errors
+  during HSM measurements and GalSimRangeError for attempted use of input
+  parameters outside of allowed ranges. (#755)
+- Changed the type of warnings raised by GalSim to GalSimWarning, which is
+  a subclass of UserWarning. (#755)
+- Changed the default maximum_fft_size in GSParams to 8192 from 4096.  This
+  increases the potential memory used by an FFT when drawing an object with
+  an FFT from 256 MB to 1 GB. (#755)
