@@ -36,6 +36,7 @@ from .position import PositionI, PositionD
 from .table import LookupTable
 from .random import UniformDeviate
 from . import meta_data
+from .errors import GalSimUndefinedBoundsError
 
 class Sensor(object):
     """
@@ -63,7 +64,7 @@ class Sensor(object):
                             [default: (0,0)]
         """
         if not image.bounds.isDefined():
-            raise GalSimError("Calling accumulate on image with undefined bounds")
+            raise GalSimUndefinedBoundsError("Calling accumulate on image with undefined bounds")
         return photons.addTo(image)
 
     def __repr__(self):
@@ -237,7 +238,7 @@ class SiliconSensor(Sensor):
                             [default: (0,0)]
         """
         if not image.bounds.isDefined():
-            raise GalSimError("Calling accumulate on image with undefined bounds")
+            raise GalSimUndefinedBoundsError("Calling accumulate on image with undefined bounds")
         return self._silicon.accumulate(photons._pa, self.rng._rng, image._image, orig_center._p)
 
     def _read_config_file(self, filename):
