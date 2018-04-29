@@ -296,6 +296,15 @@ def test_silicon():
     assert_raises(TypeError, galsim.SiliconSensor, rng=3.4)
     assert_raises(TypeError, galsim.SiliconSensor, 'lsst_itl_8', 'hello')
 
+    # Invalid to accumulate onto undefined image.
+    photons = galsim.PhotonArray(3)
+    image = galsim.ImageD()
+    with assert_raises(galsim.GalSimUndefinedBoundsError):
+        simple.accumulate(photons, image)
+    with assert_raises(galsim.GalSimUndefinedBoundsError):
+        silicon.accumulate(photons, image)
+
+
 @timer
 def test_silicon_fft():
     """Test that drawing with method='fft' also works for SiliconSensor.
@@ -632,6 +641,9 @@ def test_treerings():
                                            mom['Mx'], decimal=1)
             np.testing.assert_almost_equal(ref_mom['My'] + treering_amplitude * center[1] / 1000,
                                            mom['My'], decimal=1)
+
+    assert_raises(TypeError, galsim.SiliconSensor, treering_func=lambda x:np.cos(x))
+    assert_raises(TypeError, galsim.SiliconSensor, treering_func=tr7, treering_center=(3,4))
 
 if __name__ == "__main__":
     test_simple()
