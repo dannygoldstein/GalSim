@@ -28,7 +28,7 @@ from .utilities import lazy_property
 from .position import PositionD
 from .bounds import BoundsD
 from .errors import GalSimRangeError, GalSimBoundsError, GalSimValueError
-from .errors import GalSimIncompatibleValuesError
+from .errors import GalSimIncompatibleValuesError, convert_cpp_errors
 
 class LookupTable(object):
     """
@@ -133,8 +133,9 @@ class LookupTable(object):
         if self.x_log: self._x = np.log(self._x)
         if self.f_log: self._f = np.log(self._f)
 
-        return _galsim._LookupTable(self._x.ctypes.data, self._f.ctypes.data,
-                                    len(self._x), self.interpolant)
+        with convert_cpp_errors():
+            return _galsim._LookupTable(self._x.ctypes.data, self._f.ctypes.data,
+                                        len(self._x), self.interpolant)
 
     @property
     def x_min(self): return self._x_min
@@ -461,9 +462,10 @@ class LookupTable2D(object):
 
     @lazy_property
     def _tab(self):
-        return _galsim._LookupTable2D(self.x.ctypes.data, self.y.ctypes.data,
-                                      self.f.ctypes.data, len(self.x), len(self.y),
-                                      self.interpolant)
+        with convert_cpp_errors():
+            return _galsim._LookupTable2D(self.x.ctypes.data, self.y.ctypes.data,
+                                          self.f.ctypes.data, len(self.x), len(self.y),
+                                          self.interpolant)
     def getXArgs(self):
         return self.x
 
