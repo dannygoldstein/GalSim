@@ -461,21 +461,57 @@ def test_scale_unit():
 def test_stepk_maxk():
     """Test options to specify (or not) stepk and maxk.
     """
+    import time
     aper = galsim.Aperture(diam=1.0)
     rng = galsim.BaseDeviate(123456)
     # Test frozen AtmosphericScreen first
     atm = galsim.Atmosphere(screen_size=30.0, altitude=10.0, speed=0.1, alpha=1.0, rng=rng)
     psf = galsim.PhaseScreenPSF(atm, 500.0, aper=aper, scale_unit=galsim.arcsec)
-    stepk = psf.stepk
-    maxk = psf.maxk
+    t0 = time.time()
+    stepk1 = psf.stepk
+    maxk1 = psf.maxk
+    t1 = time.time()
+    print('stepk1 = ',stepk1)
+    print('maxk1 = ',maxk1)
+    print('t1 = ',t1-t0)
 
+    psf._prepareDraw()
+    stepk2 = psf.stepk
+    maxk2 = psf.maxk
+    t2 = time.time()
+    print('stepk2 = ',stepk2)
+    print('maxk2 = ',maxk2)
+    print('goodImageSize = ',psf.getGoodImageSize(0.2))
+    print('t2 = ',t2-t1)
+
+    np.testing.assert_allclose(stepk1, stepk2, rtol=0.05)
+    np.testing.assert_allclose(maxk1, maxk2, rtol=0.05)
+
+    # Also make sure that prepareDraw wasn't called to calculate the first one.
+    # Should be very quick to do the first stepk, maxk, but slow to do the second.
+    assert t1-t0 < t2-t1
+
+    # Check that stepk changes when gsparams.folding_threshold become more extreme.
+    # (Note: maxk is independent of maxk_threshold because of the hard edge of the aperture.)
+    psf1 = galsim.PhaseScreenPSF(atm, 500.0, diam=1.0, scale_unit=galsim.arcsec,
+                                 gsparams=galsim.GSParams(folding_threshold=1.e-3,
+                                                          maxk_threshold=1.e-4))
+    stepk3 = psf1.stepk
+    maxk3 = psf1.maxk
+    print('stepk3 = ',stepk3)
+    print('maxk3 = ',maxk3)
+    print('goodImageSize = ',psf1.getGoodImageSize(0.2))
+    assert stepk3 < stepk1
+    assert maxk3 == maxk1
+
+    # Check that it respects the force_stepk and force_maxk parameters
     psf2 = galsim.PhaseScreenPSF(atm, 500.0, aper=aper, scale_unit=galsim.arcsec,
-                                 _force_stepk=stepk/1.5, _force_maxk=maxk*2.0)
+                                 _force_stepk=stepk2/1.5, _force_maxk=maxk2*2.0)
     np.testing.assert_almost_equal(
-            psf2.stepk, stepk/1.5, decimal=7,
+            psf2.stepk, stepk2/1.5, decimal=7,
             err_msg="PhaseScreenPSF did not adopt forced value for stepk")
     np.testing.assert_almost_equal(
-            psf2.maxk, maxk*2.0, decimal=7,
+            psf2.maxk, maxk2*2.0, decimal=7,
             err_msg="PhaseScreenPSF did not adopt forced value for maxk")
     do_pickle(psf)
     do_pickle(psf2)
@@ -779,6 +815,10 @@ def test_phase_gradient_shoot():
         assert psf.second_kick == second_kick
         img = psf.drawImage(nx=64, ny=64, scale=0.1, method='phot', n_photons=100)
 
+    # Verify that we can phase_gradient_shoot with 0 or 1 photons.
+    psf.shoot(0)
+    psf.shoot(1)
+
 
 @timer
 def test_input():
@@ -849,7 +889,7 @@ def test_gc():
     # First check that no PhaseScreenPSFs are known to the garbage collector
     assert not any([isinstance(it, galsim.phase_psf.PhaseScreenPSF) for it in gc.get_objects()])
 
-    # Make a PhaseScreenPSF and check that it s known to the garbage collector
+    # Make a PhaseScreenPSF and check that it's known to the garbage collector
     psf = atm.makePSF(exptime=0.02, time_step=0.01, diam=1.1, lam=1000.0)
     assert any([isinstance(it, galsim.phase_psf.PhaseScreenPSF) for it in gc.get_objects()])
 

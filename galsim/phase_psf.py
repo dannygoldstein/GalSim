@@ -1163,16 +1163,26 @@ class PhaseScreenPSF(GSObject):
         # We'll set these more intelligently as needed below
         self._second_kick = second_kick
 
-        # Need to put in a placeholder SBProfile so that calls to, for example,
-        # self.stepk, still work.
-        array = np.array([[self._flux]], dtype=np.float)
-        bounds = _BoundsI(1, 1, 1, 1)
-        wcs = PixelScale(self.scale)
-        image = _Image(array, bounds, wcs)
-        dummy_interpolant = 'delta' # so wavefront gradient photon-shooting works.
+        # Need to put in a placeholder SBProfile so that calls to stepk and maxk work
+        # without having to do _prepareDraw.
+        # All we really need is for the stepk and maxk to be correct, so use the
+        # force_ options to set them how we want.
+        if _force_stepk > 0.:
+            dummy_stepk = _force_stepk
+        else:
+            dummy_stepk = self._screen_list._getStepK(lam=self.lam, diam=self.aper.diam,
+                                                      obscuration=self.aper.obscuration,
+                                                      gsparams=self._gsparams)
+        if _force_maxk > 0.:
+            dummy_maxk = _force_maxk
+        else:
+            dummy_maxk = self.aper._getMaxK(self.lam, self.scale_unit)
+        dummy_image = _Image(np.array([[self._flux]], dtype=np.float),
+                             _BoundsI(1, 1, 1, 1), PixelScale(1.))
+        dummy_interpolant = 'delta'  # Use delta so it doesn't contribute to stepk
         self._ii = InterpolatedImage(
-                image, pad_factor=1.0, x_interpolant=dummy_interpolant,
-                _force_stepk=self._force_stepk, _force_maxk=self._force_maxk)
+                dummy_image, pad_factor=1.0, x_interpolant=dummy_interpolant,
+                _force_stepk=dummy_stepk, _force_maxk=dummy_maxk)
         self._screen_list._delayCalculation(self)
 
     @property

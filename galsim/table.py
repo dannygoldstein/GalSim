@@ -22,6 +22,7 @@ addition of the docstring and few extra features.
 Also, a simple 2D table for gridded input data: LookupTable2D.
 """
 import numpy as np
+import numbers
 
 from . import _galsim
 from .utilities import lazy_property
@@ -495,8 +496,7 @@ class LookupTable2D(object):
             raise GalSimBoundsError("Extrapolating beyond input range.",
                                     PositionD(x,y), self._bounds)
 
-        from numbers import Real
-        if isinstance(x, Real):
+        if isinstance(x, numbers.Real):
             return self._tab.interp(x, y)
         else:
             xx = np.ascontiguousarray(x.ravel(), dtype=float)
@@ -511,8 +511,7 @@ class LookupTable2D(object):
         return self._call_raise(x, y)
 
     def _call_constant(self, x, y):
-        from numbers import Real
-        if isinstance(x, Real):
+        if isinstance(x, numbers.Real):
             if self._inbounds(x, y):
                 return self._tab.interp(x, y)
             else:
@@ -544,13 +543,11 @@ class LookupTable2D(object):
             raise GalSimBoundsError("Extrapolating beyond input range.",
                                     PositionD(x,y), self._bounds)
 
-        try:
-            xx = float(x)
-            yy = float(y)
+        if isinstance(x, numbers.Real):
             grad = np.empty(2, dtype=float)
-            self._tab.gradient(xx, yy, grad.ctypes.data)
-            return tuple(grad)
-        except TypeError:
+            self._tab.gradient(x, y, grad.ctypes.data)
+            return grad[0], grad[1]
+        else:
             xx = np.ascontiguousarray(x.ravel(), dtype=float)
             yy = np.ascontiguousarray(y.ravel(), dtype=float)
             dfdx = np.empty_like(xx)
@@ -566,8 +563,7 @@ class LookupTable2D(object):
         return self._gradient_raise(x, y)
 
     def _gradient_constant(self, x, y):
-        from numbers import Real
-        if isinstance(x, Real):
+        if isinstance(x, numbers.Real):
             if self._inbounds(x, y):
                 grad = np.empty(2, dtype=float)
                 self._tab.gradient(float(x), float(y), grad.ctypes.data)
