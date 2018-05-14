@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -21,18 +21,10 @@
 from __future__ import print_function
 import numpy as np
 
+import galsim
+import galsim.wfirst
 from galsim_test_helpers import *
 
-try:
-    import galsim
-    import galsim.wfirst
-except ImportError:
-    import os
-    import sys
-    path, filename = os.path.split(__file__)
-    sys.path.append(os.path.abspath(os.path.join(path, "..")))
-    import galsim
-    import galsim.wfirst
 
 @timer
 def skip_wfirst_wcs():
@@ -466,23 +458,14 @@ def test_wfirst_psfs():
     # - achromatic PSFs without loading the pupil plane image.
 
     # First test: check that if we don't specify SCAs, then we get all the expected ones.
-    wfirst_psfs = galsim.wfirst.getPSF(approximate_struts=True)
-    got_scas = np.array(list(wfirst_psfs.keys()))
-    expected_scas = np.arange(1, galsim.wfirst.n_sca+1, 1)
-    np.testing.assert_array_equal(
-        got_scas, expected_scas,
-        err_msg='List of SCAs was not as expected when using defaults.')
+    all_SCAs = np.arange(1, galsim.wfirst.n_sca + 1, 1)
+    wfirst_psfs = galsim.wfirst.getPSF(all_SCAs, None, approximate_struts=True)
+    assert len(wfirst_psfs) == galsim.wfirst.n_sca
 
     # Check that if we specify SCAs, then we get the ones we specified.
-    expected_scas = [5, 7, 14]
-    wfirst_psfs = galsim.wfirst.getPSF(SCAs=expected_scas,
-                                       approximate_struts=True)
-    got_scas = list(wfirst_psfs.keys())
-    # Have to sort it in numerical order for this comparison.
-    got_scas.sort()
-    got_scas = np.array(got_scas)
-    np.testing.assert_array_equal(
-        got_scas, expected_scas, err_msg='List of SCAs was not as requested')
+    scas = [5, 7, 14]
+    wfirst_psfs = galsim.wfirst.getPSF(scas, None, approximate_struts=True)
+    assert len(wfirst_psfs) == 3
 
     # Check that if we specify a particular wavelength, the PSF that is drawn is the same as if we
     # had gotten chromatic PSFs and then used evaluateAtWavelength.  Note that this nominally seems
@@ -491,17 +474,11 @@ def test_wfirst_psfs():
     use_sca = 5
     zbp = galsim.wfirst.getBandpasses()['Z087']
     use_lam = zbp.effective_wavelength # nm
-    wfirst_psfs_chrom = galsim.wfirst.getPSF(SCAs=use_sca,
-                                             approximate_struts=True)
-    psf_chrom = wfirst_psfs_chrom[use_sca]
-    wfirst_psfs_achrom = galsim.wfirst.getPSF(SCAs=use_sca,
-                                              approximate_struts=True,
-                                              wavelength=use_lam)
-    wfirst_psfs_achrom2 = galsim.wfirst.getPSF(SCAs=use_sca,
-                                              approximate_struts=True,
-                                              wavelength=zbp)
-    psf_achrom = wfirst_psfs_achrom[use_sca]
-    psf_achrom2 = wfirst_psfs_achrom2[use_sca]
+    psf_chrom = galsim.wfirst.getPSF(use_sca, None, approximate_struts=True)
+    psf_achrom = galsim.wfirst.getPSF(use_sca, None, approximate_struts=True,
+                                      wavelength=use_lam)
+    psf_achrom2 = galsim.wfirst.getPSF(use_sca, None, approximate_struts=True,
+                                       wavelength=zbp)
     # First, we can draw the achromatic PSF.
     im_achrom = psf_achrom.drawImage(scale=galsim.wfirst.pixel_scale)
     im_achrom2 = im_achrom.copy()
@@ -526,13 +503,11 @@ def test_wfirst_psfs():
     red_limit = bp['Y106'].red_limit
     n_waves = 2
     other_sca = 12
-    wfirst_psfs_int = galsim.wfirst.getPSF(SCAs=[use_sca, other_sca],
-                                           approximate_struts=True, n_waves=n_waves,
-                                           wavelength_limits=(blue_limit, red_limit))
-    psf_int = wfirst_psfs_int[use_sca]
+    psf_int = galsim.wfirst.getPSF([use_sca, other_sca], 'Y106',
+                                   approximate_struts=True, n_waves=n_waves)
     # Check that evaluation at a single wavelength is consistent with previous results.
     im_int = im_achrom.copy()
-    obj_int = psf_int.evaluateAtWavelength(blue_limit)
+    obj_int = psf_int[0].evaluateAtWavelength(blue_limit)
     im_int = obj_int.drawImage(image=im_int, scale=galsim.wfirst.pixel_scale)
     # These images should agree well, but not perfectly.  One of them comes from drawing an image
     # from an object directly, whereas the other comes from drawing an image of that object, making
@@ -558,7 +533,8 @@ def test_wfirst_psfs():
             os.remove(test_file)
         full_bp_list = galsim.wfirst.getBandpasses()
         bp_list = ['Y106']
-        galsim.wfirst.storePSFImages(bandpass_list=bp_list, PSF_dict=wfirst_psfs_int,
+        psf_dict = dict(zip([use_sca, other_sca], psf_int))
+        galsim.wfirst.storePSFImages(bandpass_list=bp_list, PSF_dict=psf_dict,
                                      filename=test_file)
         new_dict = galsim.wfirst.loadPSFImages(test_file)
         # Check that it contains the right list of bandpasses.
@@ -566,7 +542,7 @@ def test_wfirst_psfs():
             list(new_dict.keys()), bp_list, err_msg='Wrong list of bandpasses in stored file')
         # Check that when we take the dict for that bandpass, we get the right list of SCAs.
         np.testing.assert_array_equal(
-            list(new_dict[bp_list[0]].keys()), list(wfirst_psfs_int.keys()),
+            list(new_dict[bp_list[0]].keys()), list(psf_dict.keys()),
             err_msg='Wrong list of SCAs in stored file')
         # Now draw an image from the stored object.
         img_stored = new_dict[bp_list[0]][other_sca].drawImage(scale=1.3*galsim.wfirst.pixel_scale)
@@ -576,7 +552,7 @@ def test_wfirst_psfs():
         star_sed = galsim.SED(lambda x:1,
                               wave_type='nanometers',
                               flux_type='flambda').withFlux(1, full_bp_list[bp_list[0]])
-        obj = galsim.Convolve(wfirst_psfs_int[other_sca], star*star_sed)
+        obj = galsim.Convolve(psf_dict[other_sca], star*star_sed)
         test_im = img_stored.copy()
         test_im = obj.drawImage(full_bp_list[bp_list[0]],
                                 image=test_im, scale=1.3*galsim.wfirst.pixel_scale)
@@ -591,15 +567,15 @@ def test_wfirst_psfs():
         try:
             np.testing.assert_raises(ValueError, galsim.wfirst.storePSFImages,
                                      bandpass_list=bp_list,
-                                     PSF_dict=wfirst_psfs_int,
+                                     PSF_dict=psf_dict,
                                      filename=test_file)
             np.testing.assert_raises(ValueError, galsim.wfirst.storePSFImages,
                                      bandpass_list=3,
-                                     PSF_dict=wfirst_psfs_int,
+                                     PSF_dict=psf_dict,
                                      filename='1_'+test_file)
             np.testing.assert_raises(ValueError, galsim.wfirst.storePSFImages,
                                      bandpass_list=full_bp_list.keys()+['fakebp'],
-                                     PSF_dict=wfirst_psfs_int,
+                                     PSF_dict=psf_dict,
                                      filename='2_'+test_file)
             np.testing.assert_raises(ValueError, galsim.wfirst.storePSFImages,
                                      bandpass_list=bp_list,
@@ -610,7 +586,7 @@ def test_wfirst_psfs():
         # And make sure it comments on this when clobber is true.
         import warnings
         with warnings.catch_warnings(record=True) as ww:
-            galsim.wfirst.storePSFImages(bandpass_list=bp_list, PSF_dict=wfirst_psfs_int,
+            galsim.wfirst.storePSFImages(bandpass_list=bp_list, PSF_dict=psf_dict,
                                          filename=test_file, clobber=True)
         expected_message = "Output file already exists, and will be clobbered."
         np.testing.assert_equal(str(ww[0].message), expected_message)
@@ -631,10 +607,13 @@ def test_wfirst_psfs():
             #  'gsparams':galsim.GSParams(maximum_fft_size=8192) }
             ]:
 
-            psf = galsim.wfirst.getPSF(SCAs=use_sca, **kwargs)[use_sca]
-            psf_achrom = galsim.wfirst.getPSF(SCAs=use_sca, wavelength=use_lam, **kwargs)[use_sca]
+            gsparams = galsim.GSParams(maximum_fft_size=8192)
+            psf = galsim.wfirst.getPSF(use_sca, 'Y106', gsparams=gsparams, **kwargs)
+            psf_achrom = galsim.wfirst.getPSF(use_sca, 'Y106', wavelength=use_lam,
+                                              gsparams=gsparams, **kwargs)
             psf_chrom = psf.evaluateAtWavelength(use_lam)
             im_achrom = psf_achrom.drawImage(scale=galsim.wfirst.pixel_scale)
+            bp_dict = galsim.wfirst.getBandpasses()
             im_chrom = psf_chrom.drawImage(image=im_achrom.copy())
             #im_achrom.write('im_achrom.fits')
             #im_chrom.write('im_chrom.fits')
@@ -648,9 +627,9 @@ def test_wfirst_psfs():
     # Check for exceptions if we:
     # (1) Include optional aberrations in an unacceptable form.
     # (2) Invalid SCA numbers.
-    assert_raises(ValueError, galsim.wfirst.getPSF, extra_aberrations=[0.03, -0.06])
-    assert_raises(ValueError, galsim.wfirst.getPSF, SCAs=30)
-    assert_raises(ValueError, galsim.wfirst.getPSF, SCAs=0)
+    assert_raises(ValueError, galsim.wfirst.getPSF, 3, None, extra_aberrations=[0.03, -0.06])
+    assert_raises(ValueError, galsim.wfirst.getPSF, 30, None)
+    assert_raises(ValueError, galsim.wfirst.getPSF, 0, None)
 
 
 @timer
@@ -674,8 +653,9 @@ def test_wfirst_basic_numbers():
                                'Z087': 0.023,
                                'H158': 0.022,
                                'W149': 0.023}
-    ref_pupil_plane_file = os.path.join(galsim.meta_data.share_dir,
-                                        "WFIRST-AFTA_Pupil_Mask_C5_20141010_PLT.fits.gz")
+    ref_pupil_plane_file = os.path.join(
+            galsim.meta_data.share_dir,
+            "WFIRST_SRR_WFC_Pupil_Mask_Shortwave_2048_reformatted.fits.gz")
     ref_stray_light_fraction = 0.1
     ref_ipc_kernel = np.array([ [0.001269938, 0.015399776, 0.001199862], \
                                     [0.013800177, 1.0, 0.015600367], \
@@ -737,7 +717,6 @@ def test_wfirst_basic_numbers():
         'WFIRST charge_diffusion disagrees with expected value'
 
 if __name__ == "__main__":
-    #skip_wfirst_wcs()
     test_wfirst_wcs()
     test_wfirst_backgrounds()
     test_wfirst_bandpass()

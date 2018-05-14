@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2017 by the GalSim developers team on GitHub
+# Copyright (c) 2012-2018 by the GalSim developers team on GitHub
 # https://github.com/GalSim-developers
 #
 # This file is part of GalSim: The modular galaxy image simulation toolkit.
@@ -35,9 +35,9 @@ zemax_filepref = "WFIRST_Phase-A_SRR_WFC_Zernike_and_Field_Data_170727"
 zemax_filesuff = '.txt'
 zemax_wavelength = 1293. #nm
 
-def getPSF(SCA, bandpass, SCA_pos=None, approximate_struts=False, n_waves=None, extra_aberrations=None,
-           logger=None, wavelength=None, high_accuracy=False,
-           gsparams=None):
+def getPSF(SCA, bandpass,
+           SCA_pos=None, approximate_struts=False, n_waves=None, extra_aberrations=None,
+           logger=None, wavelength=None, high_accuracy=False, gsparams=None):
     """
     Get the PSF for WFIRST observations (either a single PSF or a list, depending on the inputs).
 
@@ -97,7 +97,7 @@ def getPSF(SCA, bandpass, SCA_pos=None, approximate_struts=False, n_waves=None, 
 
     The PSFs are always defined assuming the user will specify length scales in arcsec.
 
-    @param    SCA                  Single value or iterable specifying the SCA(s) for which the 
+    @param    SCA                  Single value or iterable specifying the SCA(s) for which the
                                    PSF should be loaded.
     @param    bandpass             Single string or list of strings specifying the bandpass to use
                                    when defining the pupil plane configuration and/or interpolation
@@ -267,21 +267,6 @@ def _get_single_PSF(SCA, bandpass, SCA_pos, approximate_struts,
                 pupil_plane_im = galsim.wfirst.pupil_plane_file_shortwave
             pupil_plane_scale = galsim.wfirst.pupil_plane_scale
 
-    if wavelength is None:
-        if n_waves is not None:
-            # To decide the range of wavelengths to use, check the bandpass.
-            bandpass_dict = galsim.wfirst.getBandpasses()
-            # Then find the blue and red limit to be used for the imaging bandpasses overall.
-            blue_limit, red_limit = _find_limits(bandpass, bandpass_dict)
-    else:
-        if isinstance(wavelength, galsim.Bandpass):
-            wavelength_nm = wavelength.effective_wavelength
-        elif isinstance(wavelength, float):
-            wavelength_nm = wavelength
-        else:
-            raise TypeError("Keyword 'wavelength' should either be a Bandpass, float,"
-                            " or None.")
-
     # Start reading in the aberrations for that SCA
     if logger: logger.debug('Beginning to get the PSF aberrations.')
     aberrations, x_pos, y_pos = _read_aberrations(SCA)
@@ -312,9 +297,20 @@ def _get_single_PSF(SCA, bandpass, SCA_pos, approximate_struts,
                 pupil_plane_scale=pupil_plane_scale,
                 oversampling=oversampling, pad_factor=2., gsparams=gsparams)
         if n_waves is not None:
+            bp_dict = galsim.wfirst.getBandpasses()
+            bp = bp_dict[bandpass]
+            blue_limit, red_limit = bp.blue_limit, bp.red_limit
             PSF = PSF.interpolate(waves=np.linspace(blue_limit, red_limit, n_waves),
                                   oversample_fac=1.5)
     else:
+        if isinstance(wavelength, galsim.Bandpass):
+            wavelength_nm = wavelength.effective_wavelength
+        elif isinstance(wavelength, float):
+            wavelength_nm = wavelength
+        else:
+            raise TypeError("Keyword 'wavelength' should either be a Bandpass, float,"
+                            " or None.")
+
         tmp_aberrations = use_aberrations * zemax_wavelength / wavelength_nm
         if approximate_struts:
             PSF = galsim.OpticalPSF(lam=wavelength_nm, diam=galsim.wfirst.diameter,
@@ -490,7 +486,8 @@ def _read_aberrations(SCA):
     field positions
 
     @param  SCA      The identifier for the SCA, from 1-18.
-    @returns NumPy arrays containing the aberrations, and x and y field positions. 
+
+    @returns NumPy arrays containing the aberrations, and x and y field positions.
     """
     if SCA < 1 or SCA > galsim.wfirst.n_sca:
         raise ValueError("SCA requested is out of range: %d"%SCA)
@@ -537,26 +534,6 @@ def _interp_aberrations_bilinear(aberrations, x_pos, y_pos, SCA_pos):
         x_frac*y_frac*upper_x_upper_y_ab
 
     return interp_ab.flatten()
-
-def _find_limits(bandpasses, bandpass_dict):
-    """
-    This is a helper routine to find the minimum and maximum wavelengths across all bandpasses that
-    are to be used.
-
-    It requires a list of bandpasses and a dict containing the actual Bandpass objects, and returns
-    the all-inclusive blue and red limits.
-
-    @param bandpasses      List of bandpasses of interest.
-    @param bandpass_dict   Dict containing all the bandpass objects.
-    @returns blue and red wavelength limits, in nanometers.
-    """
-    min_wave = 1.e6
-    max_wave = -1.e6
-    for bandname in bandpasses:
-        bp = bandpass_dict[bandname]
-        if bp.blue_limit < min_wave: min_wave = bp.blue_limit
-        if bp.red_limit > max_wave: max_wave = bp.red_limit
-    return min_wave, max_wave
 
 def _expand_list(x, n):
     """
