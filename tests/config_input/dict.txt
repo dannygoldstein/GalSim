@@ -16,22 +16,18 @@
 #    and/or other materials provided with the distribution.
 #
 
-from __future__ import print_function
-import os
-import sys
-import numpy as np
 
-import galsim
-from galsim_test_helpers import *
+b: false
 
+f: 0.1
 
-def check_dep(f, *args, **kwargs):
-    """Check that some function raises a GalSimDeprecationWarning as a warning, but not an error.
-    """
-    # Check that f() raises a warning, but not an error.
-    with assert_warns(galsim.GalSimDeprecationWarning):
-        res = f(*args, **kwargs)
-    return res
+i: 1
 
-if __name__ == "__main__":
-    pass
+s: Brian
+
+noise :
+    models :
+        - { variance : 0.12 }
+        - { gain : 1.9, read_noise : 0.3, sky_level : 100 }
+
+        

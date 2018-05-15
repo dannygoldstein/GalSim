@@ -186,17 +186,19 @@ def getPSF(SCA, bandpass,
             elif bandpass[i] in galsim.wfirst.shortwave_bands:
                 pupil_plane_type[i] = 'short'
             else:
-                raise ValueError("Bad bandpass input: %s"%bandpass[i])
+                raise galsim.GalSimValueError("Bad bandpass input.",bandpass[i])
         else:
             # Sanity checking:
             # If we need to use bandpass info, require that it be one of the defaults.
             # If we do not need to use bandpass info, allow it to be None.
             if n_waves[i] is not None:
                 if bandpass[i] not in default_bandpass_list:
-                    raise ValueError("Bad bandpass input: %s"%bandpass[i])
+                    raise galsim.GalSimValueError("Bandpass not a valid WFIRST bandpass.",
+                                                  bandpass[i])
             else:
                 if bandpass[i] not in default_bandpass_list and bandpass[i] is not None:
-                    raise ValueError("Bad bandpass input: %s"%bandpass[i])
+                    raise galsim.GalSimValueError("Bandpass not a valid WFIRST bandpass.",
+                                                  bandpass[i])
 
     # Check cases where reusing is possible.
     # That would be if the SCA and SCA_pos and extra_aberrations are the same,
@@ -237,7 +239,8 @@ def _get_single_PSF(SCA, bandpass, SCA_pos, approximate_struts,
                     n_waves, extra_aberrations, logger, wavelength,
                     high_accuracy, pupil_plane_type, gsparams):
     """Routine for making a single PSF.  This gets called by getPSF() after it parses all the
-       options that were passed in.  Users will not directly interact with this routine."""
+       options that were passed in.  Users will not directly interact with this routine.
+    """
     # Deal with some accuracy settings.
     if high_accuracy:
         if approximate_struts:
@@ -303,22 +306,16 @@ def _get_single_PSF(SCA, bandpass, SCA_pos, approximate_struts,
             PSF = PSF.interpolate(waves=np.linspace(blue_limit, red_limit, n_waves),
                                   oversample_fac=1.5)
     else:
-        if isinstance(wavelength, galsim.Bandpass):
-            wavelength_nm = wavelength.effective_wavelength
-        elif isinstance(wavelength, float):
-            wavelength_nm = wavelength
-        else:
-            raise TypeError("Keyword 'wavelength' should either be a Bandpass, float,"
-                            " or None.")
-
-        tmp_aberrations = use_aberrations * zemax_wavelength / wavelength_nm
+        if not isinstance(wavelength, float):
+            raise TypeError("wavelength should either be a Bandpass, float, or None.")
+        tmp_aberrations = use_aberrations * zemax_wavelength / wavelength
         if approximate_struts:
-            PSF = galsim.OpticalPSF(lam=wavelength_nm, diam=galsim.wfirst.diameter,
+            PSF = galsim.OpticalPSF(lam=wavelength, diam=galsim.wfirst.diameter,
                                     aberrations=tmp_aberrations,
                                     obscuration=galsim.wfirst.obscuration, nstruts=6,
                                     oversampling=oversampling, gsparams=gsparams)
         else:
-            PSF = galsim.OpticalPSF(lam=wavelength_nm, diam=galsim.wfirst.diameter,
+            PSF = galsim.OpticalPSF(lam=wavelength, diam=galsim.wfirst.diameter,
                                     aberrations=tmp_aberrations,
                                     obscuration=galsim.wfirst.obscuration,
                                     pupil_plane_im=pupil_plane_im,
@@ -353,15 +350,14 @@ def storePSFImages(PSF_dict, filename, bandpass_list=None, clobber=False):
     # Check for sane input PSF_dict.
     if len(PSF_dict) == 0 or len(PSF_dict) > galsim.wfirst.n_sca or \
             min(PSF_dict.keys()) < 1 or max(PSF_dict.keys()) > galsim.wfirst.n_sca:
-        raise ValueError("PSF_dict must come from getPSF()!")
+        raise galsim.GalSimError("PSF_dict must come from getPSF().")
 
     # Check if file already exists and warn about clobbering.
-    if os.path.exists(filename):
-        if clobber is False:
-            raise ValueError("Output file already exists, and clobber is not set!")
+    if os.path.isfile(filename):
+        if clobber:
+            os.remove(filename)
         else:
-            import warnings
-            warnings.warn("Output file already exists, and will be clobbered.")
+            raise OSError("Output file %r already exists"%filename)
 
     # Check that bandpass list input is okay.  It should be strictly a subset of the default list of
     # bandpasses.
@@ -371,13 +367,10 @@ def storePSFImages(PSF_dict, filename, bandpass_list=None, clobber=False):
         if not hasattr(bandpass_list, '__iter__'):
             bandpass_list = [bandpass_list]
         if not isinstance(bandpass_list[0], basestring):
-            raise ValueError("Expected input list of bandpass names!")
+            raise TypeError("Expected input list of bandpass names.")
         if not set(bandpass_list).issubset(default_bandpass_list):
-            err_msg = ''
-            for item in default_bandpass_list:
-                err_msg += item+' '
-            raise ValueError("Bandpass list must be a subset of the default list, containing %s"
-                             %err_msg)
+            raise galsim.GalSimValueError("Invalid values in bandpass_list", bandpass_list,
+                                          default_bandpass_list)
 
     # Get all the WFIRST bandpasses.
     bandpass_dict = galsim.wfirst.getBandpasses()
@@ -390,7 +383,7 @@ def storePSFImages(PSF_dict, filename, bandpass_list=None, clobber=False):
         PSF = PSF_dict[SCA]
         if not isinstance(PSF, galsim.ChromaticOpticalPSF) and \
                 not isinstance(PSF, galsim.InterpolatedChromaticObject):
-            raise RuntimeError("Error, PSFs are not ChromaticOpticalPSFs.")
+            raise galsim.GalSimValueError("PSFs are not ChromaticOpticalPSFs.", PSF_dict)
         star = galsim.Gaussian(sigma=1.e-8, flux=1.)
 
         for bp_name in bandpass_list:
@@ -452,20 +445,19 @@ def loadPSFImages(filename):
 
         # Find all indices in `bp_list` that correspond to this bandpass.
         bp_indices = []
-        if band_name in bp_list:
-            idx = -1
-            while True:
-                try:
-                    idx = bp_list.index(band_name, idx+1)
-                    bp_indices.append(idx)
-                except ValueError:
-                    break
+        idx = -1
+        while True:
+            try:
+                idx = bp_list.index(band_name, idx+1)
+                bp_indices.append(idx)
+            except ValueError:
+                break
 
         for SCA in SCA_list:
             # Now find which element has both the right band_name and is for this SCA.  There might
             # not be any, depending on what exactly was stored.
             use_idx = -1
-            for index in bp_indices:
+            for index in bp_indices:  # pragma: no branch
                 if SCA_list[index] == SCA:
                     use_idx = index
                     break
@@ -489,9 +481,6 @@ def _read_aberrations(SCA):
 
     @returns NumPy arrays containing the aberrations, and x and y field positions.
     """
-    if SCA < 1 or SCA > galsim.wfirst.n_sca:
-        raise ValueError("SCA requested is out of range: %d"%SCA)
-
     # Construct filename.
     sca_str = '_%02d'%SCA
     infile = os.path.join(galsim.meta_data.share_dir,
@@ -545,7 +534,8 @@ def _expand_list(x, n):
     """
     if hasattr(x, '__iter__'):
         if not len(x) == n:
-            raise ValueError('Input lists are mismatched in length!')
+            raise galsim.GalSimValueError("Input lists are mismatched in length! "
+                                          "Expecting len=%d"%n, x)
         return x
     else:
         return [x] * n

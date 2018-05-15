@@ -3,26 +3,38 @@ Changes from v1.6 to v2.0
 
 The principal change in GalSim 2.0 is that it is now pip installable.
 See the updated INSTALL file for details on how to install GalSim using
-either pip or setup.py.
+either pip or setup.py.  The functionality is essentially equivalent to
+v1.6, although there are a few (mostly minor) API changes in some classes.
 
 Dependency Changes
 ------------------
 
+- Officially no longer support Python 2.6. (#755)
+- No longer support pre-astropy versions of pyfits (now bundled in astropy
+  as astropy.io.fits).  Nor astropy versions <1.0. (#755)
+- No longer support pre-2016 version of the COSMOS catalog.  You may be
+  asked to run galsim_download_cosmos again if your version is found to
+  be obsolete. (#755)
 - Added LSSTDESC.Coord, which contains the functionality that used to be in
   GalSim as the Angle and CelestialCoord classes.  We moved it to a separate
   repo so people could more easily use this functionality without requiring all
   of GalSim as a dependency. (#809b)
 - Removed dependency on boost. (#809)
 - Removed dependency on TMV. (#809)
-- Added dependency on pybind11. (#809)
-- Added dependency on Eigen. (#809)
+- Added dependency on pybind11.  (You can still use boost if you want using
+  the SCons installation method.) (#809)
+- Added dependency on Eigen. (You can still use TMV if you want using the
+  SCons installation method.) (#809)
 - FFTW is now the only dependency that pip cannot handle automatically. (#809)
-- Officially no longer support Python 2.6. (Pretty sure no one cares.)
 
 
 API Changes
 -----------
 
+- Changed the default maximum_fft_size in GSParams to 8192 from 4096.  This
+  increases the potential memory used by an FFT when drawing an object with
+  an FFT from 256 MB to 1 GB. (#755)
+- Changed the order of arguments of galsim.wfirst.allDetectorEffects. (#755)
 - Most of the functionality associated with C++-layer objects has been
   redesigned or removed.  These were non-public-API features, so if you have
   been using the public API, you should be fine.  But if you have been relying
@@ -49,12 +61,8 @@ API Changes
   profile (unless the inclination angle is 0 degrees). (#809f)
 - Removed galsim_yaml and galsim_json scripts, which were essentially just
   aliases for galsim -f yaml and galsim -f json respectively. (#809f)
-- Removed lsst module, which depended on the LSST stack and had gotten quite
-  out of sync and broken. (#964)
-
-
-Bug Fixes
----------
+- Removed the lsst module, which depended on the LSST stack and had gotten
+  quite out of sync and broken. (#964)
 
 
 Deprecated Features
@@ -66,18 +74,11 @@ Deprecated Features
 New Features
 ------------
 
-- Added Zernike submodule. (#832, #951)
-- Updated PhaseScreen wavefront and wavefront_gradient methods to accept `None`
-  as a valid time argument, which means to use the internally stored time in
-  the screen(s). (#864)
-- Added SecondKick profile GSObject. (#864)
-- Updated PhaseScreenPSFs to automatically include SecondKick objects when
-  being drawn with geometric photon shooting. (#864)
-- Added option to use circular weight function in HSM adaptive moments code.
-  (#917)
-- Added VonKarman profile GSObject. (#940)
-- Added PhotonDCR surface op to apply DCR for photon shooting. (#955)
-- Added astropy units as allowed values of wave_type in Bandpass. (#955)
-- Added ability to get net pixel areas from the Silicon code for a given flux
-  image. (#963)
-- Added ability to transpose the meaning of (x,y) in the Silicon class. (#963)
+- Added a new class hierarchy for exceptions raised by GalSim with the base
+  class `GalSimError`, a subclass of `RuntimeError`.  This provides a hook for
+  adding sub-classes, which may provide more specific information about the
+  nature of an error.  So far, sub-classes include GalSimHSMError for errors
+  during HSM measurements and GalSimRangeError for attempted use of input
+  parameters outside of allowed ranges. (#755)
+- Changed the type of warnings raised by GalSim to GalSimWarning, which is
+  a subclass of UserWarning. (#755)

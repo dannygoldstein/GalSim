@@ -160,6 +160,7 @@ def test_wfirst_wcs():
 
     n_fail = 0
     for i_test in range(n_test):
+        print('i_test = ',i_test)
         # Make the WCS for this test.
         world_pos = galsim.CelestialCoord(ra_cen[i_test]*galsim.degrees,
                                           dec_cen[i_test]*galsim.degrees)
@@ -177,7 +178,40 @@ def test_wfirst_wcs():
             galsim.CelestialCoord(ra[i_test]*galsim.degrees,
                                   dec[i_test]*galsim.degrees))
         if found_sca is None: found_sca=0
-        if found_sca != chris_sca[i_test]: n_fail += 1
+        if found_sca != chris_sca[i_test]:
+            n_fail += 1
+            print('Failed to find SCA: ',found_sca, chris_sca[i_test])
+
+        # Just cycle through the SCAs for the next bits.
+        sca_test = i_test % 18 + 1
+        gs_wcs = gs_wcs_dict[sca_test]
+
+        # Check center position:
+        im_cent_pos = galsim.PositionD(galsim.wfirst.n_pix/2., galsim.wfirst.n_pix/2)
+        gs_cent_pos = gs_wcs.toWorld(im_cent_pos)
+
+        # Check pixel area
+        pix_area = gs_wcs.pixelArea(image_pos=im_cent_pos)
+        print('pix_area = ',pix_area)
+        np.testing.assert_allclose(pix_area, 0.012, atol=0.001)
+
+        if i_test == 0:
+            # For just one of our tests cases, we'll do some additional tests.  These will target
+            # the findSCA() functionality.  First, check that the center is found in that SCA.
+            found_sca = galsim.wfirst.findSCA(gs_wcs_dict, gs_cent_pos)
+            np.testing.assert_equal(found_sca, sca_test,
+                                    err_msg='Did not find SCA center position to be on that SCA!')
+
+            # Then, we go to a place that should be off the side by a tiny bit, and check that it is
+            # NOT on an SCA if we exclude borders, but IS on the SCA if we include borders.
+            im_off_edge_pos = galsim.PositionD(-2., galsim.wfirst.n_pix/2.)
+            world_off_edge_pos = gs_wcs.toWorld(im_off_edge_pos)
+            found_sca = galsim.wfirst.findSCA(gs_wcs_dict, world_off_edge_pos)
+            assert found_sca is None
+            found_sca = galsim.wfirst.findSCA(gs_wcs_dict, world_off_edge_pos, include_border=True)
+            np.testing.assert_equal(found_sca, sca_test,
+                                    err_msg='Did not find slightly off-edge position on the SCA'
+                                    ' when including borders!')
 
         if i_test < 5:
             # Also make sure that for a given SCA, we find positions on it that should be on it,
@@ -209,6 +243,7 @@ def test_wfirst_wcs():
                 assert delta_arcsec<0.5, "could not round-trip from FPA to SCA to FPA center"
  
     # There were few-arcsec offsets in our WCS, so allow some fraction of failures.
+    print('n_fail = ',n_fail)
     assert n_fail < 0.2*n_test, 'Failed in SCA-matching against reference: %d %d'%(n_fail,n_test)
 
     # Check whether we're allowed to look at certain positions on certain dates.
@@ -236,6 +271,30 @@ def test_wfirst_wcs():
     pa = galsim.wfirst.bestPA(pos, test_date)
     np.testing.assert_almost_equal(pa.rad, -np.pi/2, decimal=3)
 
+    sun_pos= galsim.CelestialCoord(0*galsim.degrees, 0*galsim.degrees)
+    sun_pa = galsim.wfirst.bestPA(sun_pos, test_date)
+    assert sun_pa is None
+
+    with assert_raises(TypeError):
+        galsim.wfirst.getWCS(world_pos=galsim.PositionD(300,400))
+    with assert_raises(galsim.GalSimError):
+        galsim.wfirst.getWCS(world_pos=sun_pos, date=test_date)
+    with assert_raises(TypeError):
+        galsim.wfirst.getWCS(world_pos=pos, PA=33.)
+
+    # Check the rather bizarre convention that LONPOLE is always 180 EXCEPT (!!) when
+    # observing directly at the south pole.  Apparently, this convention comes from the WFIRST
+    # project office's use of the LONPOLE keyword.  So we keep it, even though it's stupid.
+    # cf. https://github.com/GalSim-developers/GalSim/pull/651#discussion-diff-26277673
+    assert gs_wcs_dict[1].header['LONPOLE'] == 180.
+    south_pole = galsim.CelestialCoord(0*galsim.degrees, -90*galsim.degrees)
+    wcs = galsim.wfirst.getWCS(world_pos=south_pole, SCAs=1)
+    assert wcs[1].header['LONPOLE'] == 0
+
+    with assert_raises(TypeError):
+        galsim.wfirst.findSCA(wcs_dict=None, world_pos=pos)
+    with assert_raises(TypeError):
+        galsim.wfirst.findSCA(wcs_dict=wcs, world_pos=galsim.PositionD(300,400))
 
 @timer
 def test_wfirst_backgrounds():
@@ -256,6 +315,19 @@ def test_wfirst_backgrounds():
         galsim.wfirst.getSkyLevel(
                 bp, world_pos=galsim.CelestialCoord(180.*galsim.degrees, 5.*galsim.degrees),
                 date=datetime.date(2025,9,15))
+
+    # world_pos must be a CelestialCoord.
+    with assert_raises(TypeError):
+        galsim.wfirst.getSkyLevel(bp, world_pos=galsim.PositionD(300,400))
+
+    # No world_pos works.  Produces sky level for some plausible generic location.
+    sky_level = galsim.wfirst.getSkyLevel(bp)
+    print('sky_level = ',sky_level)
+    np.testing.assert_allclose(sky_level, 6233.47369567) # regression test relative to v1.6
+
+    # But not with a non-wfirst bandpass
+    with assert_raises(galsim.GalSimError):
+        galsim.wfirst.getSkyLevel(galsim.Bandpass('wave', 'nm', 400, 550))
 
     # The routine should have some obvious symmetry, for example, ecliptic latitude above vs. below
     # plane and ecliptic longitude positive vs. negative (or vs. 360 degrees - original value).
@@ -293,8 +365,7 @@ def test_wfirst_bandpass():
     for filter_name, filter_ in bp.items():
         mag = AB_sed.calculateMagnitude(bandpass=filter_)
         np.testing.assert_almost_equal(mag,0.0,decimal=6,
-            err_msg="Zeropoint not set accurately enough for bandpass filter \
-            {0}".format(filter_name))
+            err_msg="Zeropoint not set accurately enough for bandpass filter "+filter_name)
 
     # Do a slightly less trivial check of bandpass-related calculations:
     # Jeff Kruk (at Goddard) took an SED template from the Castelli-Kurucz library, normalized it to
@@ -359,10 +430,37 @@ def test_wfirst_bandpass():
     for key in ref_zp.keys():
         galsim_zp = bp[key].zeropoint + delta_zp
         # They use slightly different versions of the bandpasses, so we only require agreement to
-        # 0.1 mag.
-        np.testing.assert_almost_equal(galsim_zp, ref_zp[key], decimal=1,
-                                       err_msg="Zeropoint not as expected for bandpass "
-                                       "{0}".format(key))
+        # 0.05 mag.
+        print('zp for %s: '%key, galsim_zp, ref_zp[key])
+        np.testing.assert_allclose(galsim_zp, ref_zp[key], atol=0.05,
+                                   err_msg="Wrong zeropoint for bandpass "+key)
+
+    # Note: the difference is not due to our default thinning.  This isn't any better.
+    nothin_bp = galsim.wfirst.getBandpasses(AB_zeropoint=True, default_thin_trunc=False)
+    for key in ref_zp.keys():
+        galsim_zp = nothin_bp[key].zeropoint + delta_zp
+        print('nothin zp for %s: '%key, galsim_zp, ref_zp[key])
+        np.testing.assert_allclose(galsim_zp, ref_zp[key], atol=0.05,
+                                   err_msg="Wrong zeropoint for bandpass "+key)
+
+    # Even with fairly extreme thinning, the error is still only 0.07 mag.
+    verythin_bp = galsim.wfirst.getBandpasses(AB_zeropoint=True, default_thin_trunc=False)
+    verythin_bp = {k : bp.truncate(relative_throughput=0.05).thin(rel_err=0.1)
+                   for k,bp in verythin_bp.items()}
+    for key in ref_zp.keys():
+        galsim_zp = verythin_bp[key].zeropoint + delta_zp
+        print('verythin zp for %s: '%key, galsim_zp, ref_zp[key])
+        np.testing.assert_allclose(galsim_zp, ref_zp[key], atol=0.07,
+                                   err_msg="Wrong zeropoint for bandpass "+key)
+
+    with assert_raises(TypeError):
+        galsim.wfirst.getBandpasses(default_thin_trunc=False, rel_tp=0.05)
+
+    # Can also not bother to set the zeropoint.
+    nozp_bp = galsim.wfirst.getBandpasses(AB_zeropoint=False)
+    for key in nozp_bp:
+        assert nozp_bp[key].zeropoint is None
+
 
 @timer
 def test_wfirst_detectors():
@@ -428,6 +526,7 @@ def test_wfirst_detectors():
     np.testing.assert_array_equal(
         im_2.array, im_1.array,
         err_msg='Persistence results depend on function used.')
+    assert_raises(TypeError, galsim.wfirst.applyPersistence, im_2, im0)
 
     # Then we do IPC:
     im_1 = im.copy()
@@ -441,6 +540,17 @@ def test_wfirst_detectors():
     np.testing.assert_array_equal(
         im_2.array, im_1.array,
         err_msg='IPC results depend on function used.')
+
+    # Finally, just check that this runs.
+    # (Accuracy of component functionality is all tested elsewhere.)
+    npersist = len(galsim.wfirst.persistence_coefficients)
+    print('ncoeff for persistence: ', npersist)
+    ntest = npersist + 3  # Just need a few more to test that we keep npersist.
+    past_images = []
+    for i in range(ntest):
+        im = obj.drawImage(scale=galsim.wfirst.pixel_scale)
+        past_images = galsim.wfirst.allDetectorEffects(im, past_images, rng=rng)
+    assert len(past_images) == npersist
 
 
 @timer
@@ -467,18 +577,22 @@ def test_wfirst_psfs():
     wfirst_psfs = galsim.wfirst.getPSF(scas, None, approximate_struts=True)
     assert len(wfirst_psfs) == 3
 
+    # Providing a wavelength returns achromatic PSFs
+    psf_5 = galsim.wfirst.getPSF(SCA=5, bandpass='F184', wavelength=1950.)
+    assert isinstance(psf_5, galsim.GSObject)
+
     # Check that if we specify a particular wavelength, the PSF that is drawn is the same as if we
     # had gotten chromatic PSFs and then used evaluateAtWavelength.  Note that this nominally seems
     # like a test of the chromatic functionality, but there are ways that getPSF() could mess up
     # inputs such that there is a disagreement.  That's why this unit test belongs here.
     use_sca = 5
-    zbp = galsim.wfirst.getBandpasses()['Z087']
+    all_bp = galsim.wfirst.getBandpasses()
+    zbp = all_bp['Z087']
     use_lam = zbp.effective_wavelength # nm
     psf_chrom = galsim.wfirst.getPSF(use_sca, None, approximate_struts=True)
-    psf_achrom = galsim.wfirst.getPSF(use_sca, None, approximate_struts=True,
-                                      wavelength=use_lam)
-    psf_achrom2 = galsim.wfirst.getPSF(use_sca, None, approximate_struts=True,
-                                       wavelength=zbp)
+    psf_achrom = galsim.wfirst.getPSF(use_sca, None, approximate_struts=True, wavelength=use_lam)
+    psf_achrom2 = galsim.wfirst.getPSF(use_sca, 'Z087', approximate_struts=True, wavelength=use_lam)
+
     # First, we can draw the achromatic PSF.
     im_achrom = psf_achrom.drawImage(scale=galsim.wfirst.pixel_scale)
     im_achrom2 = im_achrom.copy()
@@ -498,10 +612,9 @@ def test_wfirst_psfs():
 
     # Make a very limited check that interpolation works: just 2 wavelengths, 1 SCA.
     # use the blue and red limits for Y106:
-    bp = galsim.wfirst.getBandpasses()
-    blue_limit = bp['Y106'].blue_limit
-    red_limit = bp['Y106'].red_limit
-    n_waves = 2
+    blue_limit = all_bp['Y106'].blue_limit
+    red_limit = all_bp['Y106'].red_limit
+    n_waves = 3
     other_sca = 12
     psf_int = galsim.wfirst.getPSF([use_sca, other_sca], 'Y106',
                                    approximate_struts=True, n_waves=n_waves)
@@ -509,6 +622,7 @@ def test_wfirst_psfs():
     im_int = im_achrom.copy()
     obj_int = psf_int[0].evaluateAtWavelength(blue_limit)
     im_int = obj_int.drawImage(image=im_int, scale=galsim.wfirst.pixel_scale)
+
     # These images should agree well, but not perfectly.  One of them comes from drawing an image
     # from an object directly, whereas the other comes from drawing an image of that object, making
     # it into an InterpolatedImage, then re-drawing it.  Different accuracies are used for those
@@ -521,78 +635,73 @@ def test_wfirst_psfs():
         err_msg='PSF at a given wavelength and interpolated chromatic one evaluated at that '
         'wavelength disagree.')
 
-    # This is a little slow, but we do want to run this as part of normal unit testing
-    # to cover the storePSFImage and loadPSFImages functions.
-    if True:
-    #if __name__ == '__main__':
-        # Check that if we store and reload, what we get back is consistent with what we put in.
-        test_file = 'tmp_store.fits'
-        # Make sure we clear out any old versions
-        import os
-        if os.path.exists(test_file):
-            os.remove(test_file)
-        full_bp_list = galsim.wfirst.getBandpasses()
-        bp_list = ['Y106']
-        psf_dict = dict(zip([use_sca, other_sca], psf_int))
-        galsim.wfirst.storePSFImages(bandpass_list=bp_list, PSF_dict=psf_dict,
-                                     filename=test_file)
-        new_dict = galsim.wfirst.loadPSFImages(test_file)
-        # Check that it contains the right list of bandpasses.
-        np.testing.assert_array_equal(
-            list(new_dict.keys()), bp_list, err_msg='Wrong list of bandpasses in stored file')
-        # Check that when we take the dict for that bandpass, we get the right list of SCAs.
-        np.testing.assert_array_equal(
-            list(new_dict[bp_list[0]].keys()), list(psf_dict.keys()),
-            err_msg='Wrong list of SCAs in stored file')
-        # Now draw an image from the stored object.
-        img_stored = new_dict[bp_list[0]][other_sca].drawImage(scale=1.3*galsim.wfirst.pixel_scale)
-        # Make a comparable image from the original interpolated object.  This requires convolving with
-        # a star that has a flat SED.
-        star = galsim.Gaussian(sigma=1.e-8, flux=1.)
-        star_sed = galsim.SED(lambda x:1,
-                              wave_type='nanometers',
-                              flux_type='flambda').withFlux(1, full_bp_list[bp_list[0]])
-        obj = galsim.Convolve(psf_dict[other_sca], star*star_sed)
-        test_im = img_stored.copy()
-        test_im = obj.drawImage(full_bp_list[bp_list[0]],
-                                image=test_im, scale=1.3*galsim.wfirst.pixel_scale)
-        # We have made some approximations here, so we cannot expect it to be great.
-        # Request 1% accuracy.
-        np.testing.assert_array_almost_equal(
-            img_stored.array, test_im.array, decimal=2,
-            err_msg='PSF from stored file and actual PSF object disagree.')
+    # Check some invalid inputs.
+    # Note, this is a total cheat for getting test coverage of the high_accuracy branches
+    # in getPSF.  The actual test of this functionality comes below, but it is only run for
+    # __name__==__main__ runs (i.e. run_all_tests).
+    with assert_raises(TypeError):
+        galsim.wfirst.getPSF(SCA=use_sca, n_waves=2,
+                             approximate_struts=True, high_accuracy=True,
+                             wavelength_limits=red_limit)
+    with assert_raises(TypeError):
+        galsim.wfirst.getPSF(SCA=use_sca,
+                             approximate_struts=False, high_accuracy=True,
+                             wavelength='Y106')
 
-        # Make sure it won't overwrite when clobber is false, or accept bad
-        # input for the bandpass list or PSF dict.
-        try:
-            np.testing.assert_raises(ValueError, galsim.wfirst.storePSFImages,
-                                     bandpass_list=bp_list,
-                                     PSF_dict=psf_dict,
-                                     filename=test_file)
-            np.testing.assert_raises(ValueError, galsim.wfirst.storePSFImages,
-                                     bandpass_list=3,
-                                     PSF_dict=psf_dict,
-                                     filename='1_'+test_file)
-            np.testing.assert_raises(ValueError, galsim.wfirst.storePSFImages,
-                                     bandpass_list=full_bp_list.keys()+['fakebp'],
-                                     PSF_dict=psf_dict,
-                                     filename='2_'+test_file)
-            np.testing.assert_raises(ValueError, galsim.wfirst.storePSFImages,
-                                     bandpass_list=bp_list,
-                                     PSF_dict={},
-                                     filename='3_'+test_file)
-        except ImportError:
-            print('The assert_raises tests require nose')
-        # And make sure it comments on this when clobber is true.
-        import warnings
-        with warnings.catch_warnings(record=True) as ww:
-            galsim.wfirst.storePSFImages(bandpass_list=bp_list, PSF_dict=psf_dict,
-                                         filename=test_file, clobber=True)
-        expected_message = "Output file already exists, and will be clobbered."
-        np.testing.assert_equal(str(ww[0].message), expected_message)
+    # Check that if we store and reload, what we get back is consistent with what we put in.
+    test_file = 'tmp_store.fits'
+    with open(test_file, 'wb'): pass  # Just make it exist to test clobber feature.
+    bp_list = ['Y106']
+    psf_dict = dict(zip([use_sca, other_sca], psf_int))
+    galsim.wfirst.storePSFImages(bandpass_list=bp_list, PSF_dict=psf_dict,
+                                 filename=test_file, clobber=True)
+    new_dict = galsim.wfirst.loadPSFImages(test_file)
+    # Check that it contains the right list of bandpasses.
+    np.testing.assert_array_equal(
+        list(new_dict.keys()), bp_list, err_msg='Wrong list of bandpasses in stored file')
+    # Check that when we take the dict for that bandpass, we get the right list of SCAs.
+    np.testing.assert_array_equal(
+        list(new_dict[bp_list[0]].keys()), list(psf_dict.keys()),
+        err_msg='Wrong list of SCAs in stored file')
+    # Now draw an image from the stored object.
+    img_stored = new_dict[bp_list[0]][other_sca].drawImage(scale=1.3*galsim.wfirst.pixel_scale)
+    # Make a comparable image from the original interpolated object.  This requires convolving with
+    # a star that has a flat SED.
+    star = galsim.Gaussian(sigma=1.e-8, flux=1.)
+    star_sed = galsim.SED(lambda x:1,
+                          wave_type='nanometers',
+                          flux_type='flambda').withFlux(1, all_bp[bp_list[0]])
+    obj = galsim.Convolve(psf_dict[other_sca], star*star_sed)
+    test_im = img_stored.copy()
+    test_im = obj.drawImage(all_bp[bp_list[0]],
+                            image=test_im, scale=1.3*galsim.wfirst.pixel_scale)
+    # We have made some approximations here, so we cannot expect it to be great.
+    # Request 1% accuracy.
+    np.testing.assert_array_almost_equal(
+        img_stored.array, test_im.array, decimal=2,
+        err_msg='PSF from stored file and actual PSF object disagree.')
 
-        # Delete test files when done.
-        os.remove(test_file)
+    # Delete test files when done.
+    os.remove(test_file)
+
+    # Now can write to that without clobber.
+    galsim.wfirst.storePSFImages(psf_dict, test_file, bp_list)
+    assert os.path.isfile(test_file)
+    # Then without clobber, raises error, since file exists.
+    with assert_raises(OSError):
+        galsim.wfirst.storePSFImages(psf_dict, test_file, bp_list)
+
+    with assert_raises(galsim.GalSimError):
+        galsim.wfirst.storePSFImages({}, test_file, bp_list, clobber=True)
+    with assert_raises(TypeError):
+        galsim.wfirst.storePSFImages(psf_dict, test_file, [1,2,3], clobber=True)
+    with assert_raises(galsim.GalSimValueError):
+        galsim.wfirst.storePSFImages(psf_dict, test_file, ['g','r','i','z'], clobber=True)
+    # Note: another coverage cheat.  Leaving out bandpass_list does all bands.
+    # It takes a long time to write them all out for real though, so we don't do so here.
+    psf_achrom_dict = {use_sca : psf_achrom}
+    with assert_raises(galsim.GalSimValueError):
+        galsim.wfirst.storePSFImages(psf_achrom_dict, test_file, clobber=True)
 
     # Test the construction of PSFs with high_accuracy and/or not approximate_struts
     # But only if we're running from the command line.
@@ -603,8 +712,7 @@ def test_wfirst_psfs():
             { 'approximate_struts':False, 'high_accuracy':False },
             # This last test works, but it takes ~10 min to run.  So even in the slow tests,
             # this is a bit too extreme.
-            #{ 'approximate_struts':False, 'high_accuracy':True,
-            #  'gsparams':galsim.GSParams(maximum_fft_size=8192) }
+            #{ 'approximate_struts':False, 'high_accuracy':True, }
             ]:
 
             gsparams = galsim.GSParams(maximum_fft_size=8192)
@@ -657,69 +765,54 @@ def test_wfirst_basic_numbers():
             galsim.meta_data.share_dir,
             "WFIRST_SRR_WFC_Pupil_Mask_Shortwave_2048_reformatted.fits.gz")
     ref_stray_light_fraction = 0.1
-    ref_ipc_kernel = np.array([ [0.001269938, 0.015399776, 0.001199862], \
-                                    [0.013800177, 1.0, 0.015600367], \
-                                    [0.001270391, 0.016129619, 0.001200137] ])
+    ref_ipc_kernel = np.array([ [0.001269938, 0.015399776, 0.001199862],
+                                [0.013800177, 1.0,         0.015600367],
+                                [0.001270391, 0.016129619, 0.001200137] ])
     ref_ipc_kernel /= np.sum(ref_ipc_kernel)
     ref_ipc_kernel = galsim.Image(ref_ipc_kernel)
-    ref_persistence_coefficients = \
-        np.array([0.045707683,0.014959818,0.009115737,0.00656769,0.005135571,
-                  0.004217028,0.003577534,0.003106601])/100.
+    ref_persistence_coefficients = np.array(
+        [0.045707683,0.014959818,0.009115737,0.00656769,0.005135571,
+         0.004217028,0.003577534,0.003106601])/100.
     ref_n_sca = 18
     ref_n_pix_tot = 4096
     ref_n_pix = 4088
     ref_jitter_rms = 0.014
     ref_charge_diffusion = 0.1
 
-    assert galsim.wfirst.gain==ref_gain, \
-        'WFIRST gain disagrees with expected value'
-    assert galsim.wfirst.pixel_scale==ref_pixel_scale, \
-        'WFIRST pixel scale disagrees with expected value'
-    assert galsim.wfirst.diameter==ref_diameter, \
-        'WFIRST diameter disagrees with expected value'
-    assert galsim.wfirst.obscuration==ref_obscuration, \
-        'WFIRST obscuration disagrees with expected value'
-    assert galsim.wfirst.exptime==ref_exptime, \
-        'WFIRST exptime disagrees with expected value'
-    assert galsim.wfirst.dark_current==ref_dark_current, \
-        'WFIRST dark current disagrees with expected value'
-    assert galsim.wfirst.nonlinearity_beta==ref_nonlinearity_beta, \
-        'WFIRST nonlinearity disagrees with expected value'
-    assert galsim.wfirst.reciprocity_alpha==ref_reciprocity_alpha, \
-        'WFIRST reciprocity alpha disagrees with expected value'
-    assert galsim.wfirst.read_noise==ref_read_noise, \
-        'WFIRST read noise disagrees with expected value'
-    assert galsim.wfirst.n_dithers==ref_n_dithers, \
-        'WFIRST n_dithers disagrees with expected value'
-    assert galsim.wfirst.thermal_backgrounds.keys()==ref_thermal_backgrounds.keys(),\
-        'WFIRST thermal background list of filters disagrees with reference'
+    assert galsim.wfirst.gain==ref_gain
+    assert galsim.wfirst.pixel_scale==ref_pixel_scale
+    assert galsim.wfirst.diameter==ref_diameter
+    assert galsim.wfirst.obscuration==ref_obscuration
+    assert galsim.wfirst.exptime==ref_exptime
+    assert galsim.wfirst.dark_current==ref_dark_current
+    assert galsim.wfirst.nonlinearity_beta==ref_nonlinearity_beta
+    assert galsim.wfirst.reciprocity_alpha==ref_reciprocity_alpha
+    assert galsim.wfirst.read_noise==ref_read_noise
+    assert galsim.wfirst.n_dithers==ref_n_dithers
+    assert galsim.wfirst.thermal_backgrounds.keys()==ref_thermal_backgrounds.keys()
     for key in ref_thermal_backgrounds.keys():
-        assert galsim.wfirst.thermal_backgrounds[key]==ref_thermal_backgrounds[key],\
-            'WFIRST thermal background for %s disagrees with expected value'%key
-    assert galsim.wfirst.pupil_plane_file==ref_pupil_plane_file, \
-        'WFIRST pupil plane filename disagrees with reference'
-    assert galsim.wfirst.stray_light_fraction==ref_stray_light_fraction, \
-        'WFIRST stray_light_fraction disagrees with expected value'
-    np.testing.assert_array_equal(ref_ipc_kernel, galsim.wfirst.ipc_kernel,
-                                  'WFIRST IPC kernel disagrees with expected value')
-    np.testing.assert_array_equal(
-        ref_persistence_coefficients, galsim.wfirst.persistence_coefficients,
-        'WFIRST persistence coefficients disagree with expected value')
-    assert galsim.wfirst.n_sca==ref_n_sca, \
-        'WFIRST n_sca disagrees with expected value'
-    assert galsim.wfirst.n_pix_tot==ref_n_pix_tot, \
-        'WFIRST n_pix_tot disagrees with expected value'
-    assert galsim.wfirst.n_pix==ref_n_pix, \
-        'WFIRST n_pix disagrees with expected value'
-    assert galsim.wfirst.jitter_rms==ref_jitter_rms, \
-        'WFIRST jitter_rms disagrees with expected value'
-    assert galsim.wfirst.charge_diffusion==ref_charge_diffusion, \
-        'WFIRST charge_diffusion disagrees with expected value'
+        assert galsim.wfirst.thermal_backgrounds[key]==ref_thermal_backgrounds[key]
+    assert galsim.wfirst.pupil_plane_file==ref_pupil_plane_file
+    assert galsim.wfirst.stray_light_fraction==ref_stray_light_fraction
+    np.testing.assert_array_equal(ref_ipc_kernel, galsim.wfirst.ipc_kernel)
+    np.testing.assert_array_equal(ref_persistence_coefficients,
+                                  galsim.wfirst.persistence_coefficients)
+    assert galsim.wfirst.n_sca==ref_n_sca
+    assert galsim.wfirst.n_pix_tot==ref_n_pix_tot
+    assert galsim.wfirst.n_pix==ref_n_pix
+    assert galsim.wfirst.jitter_rms==ref_jitter_rms
+    assert galsim.wfirst.charge_diffusion==ref_charge_diffusion
 
 if __name__ == "__main__":
+    #import cProfile, pstats
+    #pr = cProfile.Profile()
+    #pr.enable()
     test_wfirst_wcs()
     test_wfirst_backgrounds()
     test_wfirst_bandpass()
     test_wfirst_detectors()
     test_wfirst_psfs()
     test_wfirst_basic_numbers()
+    #pr.disable()
+    #ps = pstats.Stats(pr).sort_stats('tottime')
+    #ps.print_stats(30)

@@ -71,7 +71,7 @@ class Position(object):
     a PositionI by a float or add a PositionI to a PositionD.
     """
     def __init__(self):
-        raise NotImplementedError("Cannot instantiate the base class.  " +
+        raise NotImplementedError("Cannot instantiate the base class.  "
                                   "Use either PositionD or PositionI.")
 
     def _parse_args(self, *args, **kwargs):
@@ -88,8 +88,8 @@ class Position(object):
                     try:
                         self.x, self.y = args[0]
                     except (TypeError, ValueError):
-                        raise TypeError(("Single argument to %s must be either a Position "+
-                                         "or a tuple.")%self.__class__)
+                        raise TypeError("Single argument to %s must be either a Position "
+                                        "or a tuple."%self.__class__)
             else:
                 raise TypeError("%s takes at most 2 arguments (%d given)"%(
                         self.__class__, len(args)))
@@ -127,7 +127,7 @@ class Position(object):
         if isinstance(other,Bounds):
             return other + self
         elif not isinstance(other,Position):
-            raise ValueError("Can only add a Position to a %s"%self.__class__.__name__)
+            raise TypeError("Can only add a Position to a %s"%self.__class__.__name__)
         elif isinstance(other, self.__class__):
             return self.__class__(self.x + other.x, self.y + other.y)
         else:
@@ -135,7 +135,7 @@ class Position(object):
 
     def __sub__(self, other):
         if not isinstance(other,Position):
-            raise ValueError("Can only subtract a Position from a %s"%self.__class__.__name__)
+            raise TypeError("Can only subtract a Position from a %s"%self.__class__.__name__)
         elif isinstance(other, self.__class__):
             return self.__class__(self.x - other.x, self.y - other.y)
         else:
@@ -163,8 +163,6 @@ class PositionD(Position):
     """
     def __init__(self, *args, **kwargs):
         self._parse_args(*args, **kwargs)
-        if self.x != float(self.x) or self.y != float(self.y):
-            raise ValueError("PositionD must be initialized with float values")
         self.x = float(self.x)
         self.y = float(self.y)
 
@@ -177,7 +175,7 @@ class PositionD(Position):
             if other == float(other): return
         except (TypeError, ValueError):
             pass
-        raise ValueError("Can only %s a PositionD by float values"%op)
+        raise TypeError("Can only %s a PositionD by float values"%op)
 
 
 class PositionI(Position):
@@ -190,7 +188,7 @@ class PositionI(Position):
     def __init__(self, *args, **kwargs):
         self._parse_args(*args, **kwargs)
         if self.x != int(self.x) or self.y != int(self.y):
-            raise ValueError("PositionI must be initialized with integer values")
+            raise TypeError("PositionI must be initialized with integer values")
         self.x = int(self.x)
         self.y = int(self.y)
 
@@ -205,4 +203,4 @@ class PositionI(Position):
             if other == int(other): return
         except (TypeError, ValueError):
             pass
-        raise ValueError("Can only %s a PositionI by integer values"%op)
+        raise TypeError("Can only %s a PositionI by integer values"%op)
